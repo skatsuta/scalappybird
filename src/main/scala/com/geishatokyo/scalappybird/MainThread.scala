@@ -20,11 +20,26 @@ object GameObject {
   var canvasHeight: Int = _  
 }
 
+object GameState {
+  object State extends Enumeration {
+    type State = Value
+    val Playing, End = Value
+  }
+
+  import State._
+  var state = Playing
+  def end() { state = End }
+  def replay() { state = Playing }
+  def isPlaying = state == Playing
+}
+
 class Bird(p: Point) extends GameObject {
 
   var img : Bitmap = null;
   var point: Point = p
-  var speed: Int = 10
+  var baseTime = System.currentTimeMillis
+  val gravity: Int = 10
+  //var speed: Int = 10
   val upOffset: Int = -200
   var enable: Boolean = true
 
@@ -37,11 +52,13 @@ class Bird(p: Point) extends GameObject {
     
     // falling
     if (enable){
-      point.y = point.y + speed
+      val now = System.currentTimeMillis
+      //point.y = point.y + speed
+      point.y = point.y + gravity * (now - baseTime).toInt / 1000
     }
 
     // dead or alive
-    if(point.y >= GameObject.canvasHeight) {
+    if (point.y >= GameObject.canvasHeight) {
       enable = false
     }
   }
@@ -51,7 +68,7 @@ class Bird(p: Point) extends GameObject {
     if (enable){
      g drawBitmap(img, point.x, point.y, p)
     } else {
-       val gamePaint = new Paint
+      val gamePaint = new Paint
       gamePaint.setARGB(255, 255, 0, 0)
       gamePaint.setTextSize(64)
       g drawText ("Game End", 250, GameObject.canvasHeight/2-32, gamePaint)     
@@ -61,6 +78,7 @@ class Bird(p: Point) extends GameObject {
   override def touchEvent(x: Int, y: Int) = {
     if (enable){
       point.y = point.y + upOffset
+      baseTime = System.currentTimeMillis
     }    
   }
 }
@@ -122,17 +140,25 @@ class Sky(p: Point) extends PaddingWidthStaticGameObject {
   }  
 }
 
+class Score(val point: Point) extends GameObject {
+  var num: Int = 0
+  // これが正しいのか？
+  def initialize(c: Context) = null
+  def update() {
+    if (GameState.isPlaying) num += 1
+  }
+  def draw(g: Canvas) {
+    val gamePaint = new Paint
+    gamePaint.setARGB(255, 0, 0, 255)
+    gamePaint.setTextSize(32)
+    g drawText (num.toString, point.x, point.y, gamePaint)
+  }
+}
+
 class MainThread(holder: SurfaceHolder, context: Context) extends Thread {
 
-  // initialize
-  var gameObjects : List[GameObject] = {
-    List(new Sky(Point(0,900-109)),
-         new Land(Point(0,900)),
-         new PipeUp(Point(500,760)),
-         new PipeDown(Point(300,0)),
-         new Bird(Point(100,0)))
-  }
-  gameObjects.foreach(_.initialize(context))
+  var gameObjects: List[GameObject] = Nil
+  init()
 
   val bluishWhite = new Paint
   bluishWhite.setARGB(255, 255, 255, 255)
@@ -148,6 +174,18 @@ class MainThread(holder: SurfaceHolder, context: Context) extends Thread {
       val t1 = System.currentTimeMillis
       if (t1 - t0 < quantum) Thread.sleep(quantum - (t1 - t0))
     }
+  }
+
+  // initialize
+  def init() {
+    gameObjects =
+      List(new Sky(Point(0,900-109)),
+           new Land(Point(0,900)),
+           new PipeUp(Point(500,760)),
+           new PipeDown(Point(300,0)),
+           new Bird(Point(100,0)),
+           new Score(Point(600, 70)))
+    gameObjects.foreach(_.initialize(context))
   }
 
   def game() {
@@ -172,6 +210,10 @@ class MainThread(holder: SurfaceHolder, context: Context) extends Thread {
   } 
   def update() {
     gameObjects.foreach(_.update())
+
+    // ゲーム終了判定
+    val bird: Bird = gameObjects(4).asInstanceOf[Bird]
+    if (bird.point.y >= GameObject.canvasHeight) { GameState.end }
   } 
 
   def withCanvas(f: Canvas => Unit) {
